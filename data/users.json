@@ -1,0 +1,18 @@
+{
+  "admin": {
+    "password": "240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9",
+    "role": "admin",
+    "created": "2026-06-30T06:01:10.120297",
+    "wins": 0,
+    "losses": 0,
+    "draws": 0
+  },
+  "jayanti": {
+    "password": "04353f9692977be9ccbe18fd31c835bc3f8a10f76c65e4fda1a7cf65767c70fa",
+    "role": "player",
+    "created": "2026-06-30T06:01:10.123299",
+    "wins": 0,
+    "losses": 0,
+    "draws": 0
+  }
+}

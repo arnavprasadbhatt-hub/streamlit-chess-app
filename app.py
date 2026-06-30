@@ -215,6 +215,7 @@ def build_board_component(fen, flipped, selected_sq, legal_dests, last_move_uci,
   </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/streamlit-component-lib@1.4.0/streamlit.js"></script>
 <script>
 // ── Config ────────────────────────────────────────────────────────────────────
 const FLIPPED    = {flipped_js};
@@ -337,7 +338,7 @@ function drawBoard() {{
         ctx.font      = `bold ${{Math.round(SQ*0.22)}}px 'JetBrains Mono', monospace`;
         ctx.textAlign = 'left';
         ctx.textBaseline = 'top';
-        const rankLabel = FLIPPED ? rank + 1 : 8 - rank;
+        const rankLabel = rank + 1;
         ctx.fillText(rankLabel, 3, y + 3);
       }}
 
@@ -492,23 +493,16 @@ document.querySelectorAll('.promo-btn').forEach(btn => {{
 }});
 
 function sendMove(sq, promoChar) {{
-  // Deliver the move to Streamlit by writing into a hidden text_input and
-  // firing real input events - NOT by navigating the page. A full page
-  // reload (the old approach) tears down the WebSocket connection, which
-  // wipes st.session_state, so the move (and even the login) was lost
-  // before Python ever saw it.
-  const val = sq + '|' + (promoChar || '') + '|' + Date.now();
+  // Send move via Streamlit component API
+  const moveData = sq + '|' + (promoChar || '') + '|' + Date.now();
   try {{
-    const input = window.parent.document.querySelector('input[aria-label="___chess_click_bridge___"]');
-    if (!input) {{ console.error('Chess bridge input not found - cannot send move.'); return; }}
-    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-    setter.call(input, val);
-    input.dispatchEvent(new Event('input', {{ bubbles: true }}));
-    input.dispatchEvent(new Event('change', {{ bubbles: true }}));
-    input.dispatchEvent(new KeyboardEvent('keydown', {{ key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true }}));
-    input.blur();
+    if (window.Streamlit) {{
+      Streamlit.setComponentValue(moveData);
+    }} else {{
+      console.error('Streamlit component API not loaded');
+    }}
   }} catch (err) {{
-    console.error('Could not deliver move to Streamlit:', err);
+    console.error('Could not deliver move:', err);
   }}
 }}
 
@@ -539,48 +533,8 @@ session_defaults()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  QUERY-PARAM CLICK HANDLER  (runs every rerun, before rendering)
+#  CLICK HANDLER
 # ══════════════════════════════════════════════════════════════════════════════
-def render_click_bridge():
-    """A hidden text_input the canvas board's JS writes into instead of
-    reloading the page. This is what lets a click reach Python without
-    destroying st.session_state."""
-    st.session_state.setdefault("_last_click_token", "")
-    st.markdown("""
-    <style>
-    div[data-testid="stTextInput"]:has(input[aria-label="___chess_click_bridge___"]) {
-        position: fixed; top: -1000px; left: -1000px;
-        width: 1px; height: 1px; overflow: hidden; opacity: 0;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-    st.text_input("___chess_click_bridge___", key="chess_click_bridge",
-                  label_visibility="collapsed")
-
-def process_click_param():
-    raw = st.session_state.get("chess_click_bridge", "")
-    if not raw or st.session_state.game_over:
-        return
-
-    # The bridge input keeps its last value across unrelated reruns (e.g.
-    # clicking "Submit" in the sidebar), so only act on a value we haven't
-    # already processed.
-    if raw == st.session_state.get("_last_click_token"):
-        return
-    st.session_state._last_click_token = raw
-
-    # Format from JS: "sq|promo|timestamp"
-    parts = raw.split("|")
-    if len(parts) != 3:
-        return
-    sq_raw, promo_char, _ts = parts
-    promo_char = promo_char or None
-
-    try: clicked_sq = int(sq_raw)
-    except: return
-
-    handle_square_click(clicked_sq, promo_char)
-
 def handle_square_click(sq, promo_char=None):
     board = chess.Board(st.session_state.board_fen)
     pc    = st.session_state.player_color
@@ -628,10 +582,6 @@ def handle_square_click(sq, promo_char=None):
             st.session_state.selected_sq = sq
         else:
             st.session_state.selected_sq = None
-
-render_click_bridge()
-process_click_param()
-
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  AUTH / GAME HELPERS
@@ -751,7 +701,10 @@ def page_auth():
                 if np!=nc: st.error("Passwords don't match.")
                 else:
                     ok,msg=register(nu,np)
-                    st.success(msg) if ok else st.error(msg)
+                    if ok:
+                        st.success(msg)
+                    else:
+                        st.error(msg)
             st.markdown('</div>', unsafe_allow_html=True)
 
 
@@ -815,7 +768,8 @@ def page_lobby():
 def page_game():
     board  = chess.Board(st.session_state.board_fen)
     pc     = st.session_state.player_color
-    flipped= (pc == chess.BLACK)
+    st.session_state.setdefault("board_flipped", False)
+    flipped= (pc == chess.BLACK) != st.session_state.board_flipped
     is_my_turn = (board.turn == pc)
 
     # Sidebar
@@ -825,6 +779,10 @@ def page_game():
         st.markdown("---")
         if st.button("⬅ Lobby"): st.session_state.page="lobby"; st.rerun()
         if st.button("🏳 Resign"): st.session_state.page="lobby"; st.rerun()
+        if st.button("🔄 Flip board"): 
+            st.session_state.setdefault("board_flipped", False)
+            st.session_state.board_flipped = not st.session_state.board_flipped
+            st.rerun()
         st.markdown("---")
         st.markdown("**Keyboard move** *(UCI or SAN)*")
         mi=st.text_input("",placeholder="e.g. e2e4 or Nf3",key="kmi",label_visibility="collapsed")
@@ -883,7 +841,19 @@ def page_game():
             is_my_turn   = is_my_turn,
             game_over    = st.session_state.game_over,
         )
-        components.html(html, height=600, scrolling=False)
+        board_click = components.html(html, height=600, scrolling=False)
+        
+        # Handle click from board component
+        if board_click:
+            parts = str(board_click).split("|")
+            if len(parts) >= 2:
+                try:
+                    sq = int(parts[0])
+                    promo_char = parts[1] if parts[1] else None
+                    handle_square_click(sq, promo_char)
+                    st.rerun()
+                except:
+                    pass
 
     with col_info:
         st.markdown('<div class="card">', unsafe_allow_html=True)

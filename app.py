@@ -810,12 +810,77 @@ def page_lobby():
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  PAGE: GAME  (single unified board)
+#  PAGE: GAME  (clickable board grid)
 # ══════════════════════════════════════════════════════════════════════════════
+def render_clickable_board():
+    board = chess.Board(st.session_state.board_fen)
+    pc = st.session_state.player_color
+    is_my_turn = (board.turn == pc)
+    selected_sq = st.session_state.selected_sq
+
+    legal_dests = set()
+    if selected_sq is not None:
+        for move in board.legal_moves:
+            if move.from_square == selected_sq:
+                legal_dests.add(move.to_square)
+
+    ranks = list(range(7, -1, -1)) if pc == chess.WHITE else list(range(8))
+    files = list(range(8)) if pc == chess.WHITE else list(range(7, -1, -1))
+
+    st.markdown(
+        """
+        <style>
+        div[data-testid="stBaseButton-secondary"] > button {
+            min-height: 76px !important;
+            min-width: 76px !important;
+            height: 76px !important;
+            width: 76px !important;
+            padding: 0 !important;
+            font-size: 2.3rem !important;
+            line-height: 1 !important;
+            border-radius: 8px !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.caption("Click a piece, then click a destination square.")
+    for rank in ranks:
+        cols = st.columns(8, gap="small")
+        for idx, file in enumerate(files):
+            sq = rank * 8 + file
+            piece = board.piece_at(sq)
+            label = piece.unicode_symbol() if piece else ""
+            if sq == selected_sq:
+                label = "●"
+            elif sq in legal_dests:
+                label = "•"
+
+            square_color = "#f0d9b5" if (file + rank) % 2 == 0 else "#b58863"
+            if sq == selected_sq:
+                square_color = "#4fc3f7"
+            elif sq in legal_dests:
+                square_color = "#7ec8e3"
+
+            with cols[idx]:
+                if st.button(
+                    label,
+                    key=f"board_{sq}",
+                    use_container_width=True,
+                    disabled=st.session_state.game_over or not is_my_turn,
+                ):
+                    handle_square_click(sq)
+
+                st.markdown(
+                    f"<div style='height:0.28rem;background:{square_color};border-radius:0.2rem;margin-top:0.2rem;'></div>",
+                    unsafe_allow_html=True,
+                )
+
+
 def page_game():
     board  = chess.Board(st.session_state.board_fen)
     pc     = st.session_state.player_color
-    flipped= (pc == chess.BLACK)
     is_my_turn = (board.turn == pc)
 
     # Sidebar
@@ -867,23 +932,7 @@ def page_game():
     col_board, col_info = st.columns([2.6, 1], gap="large")
 
     with col_board:
-        # Legal destinations for selected piece
-        legal_dests = set()
-        if st.session_state.selected_sq is not None:
-            for m in board.legal_moves:
-                if m.from_square == st.session_state.selected_sq:
-                    legal_dests.add(m.to_square)
-
-        html = build_board_component(
-            fen          = st.session_state.board_fen,
-            flipped      = flipped,
-            selected_sq  = st.session_state.selected_sq,
-            legal_dests  = legal_dests,
-            last_move_uci= st.session_state.last_move_uci,
-            is_my_turn   = is_my_turn,
-            game_over    = st.session_state.game_over,
-        )
-        components.html(html, height=600, scrolling=False)
+        render_clickable_board()
 
     with col_info:
         st.markdown('<div class="card">', unsafe_allow_html=True)

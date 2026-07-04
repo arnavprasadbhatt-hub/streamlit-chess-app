@@ -113,6 +113,26 @@ streamlit_chess_app/
 5. **Promote pawns** when reaching the final rank by selecting from the promotion dialog
 6. **View game status** in the sidebar (current turn, check warnings, move history)
 
+### Examples of moves
+
+Below are some common move examples in Standard Algebraic Notation (SAN) with equivalent UCI where helpful.
+
+- **Simple pawn move**: `e4`  — UCI: `e2e4`
+- **Piece development**: `Nf3`  — UCI: `g1f3`
+- **Capture**: `exd5` (pawn from e4 captures on d5) — UCI: `e4d5`
+- **Kingside castling**: `O-O` — UCI: `e1g1` (king) and `h1f1` (rook)
+- **Queenside castling**: `O-O-O` — UCI: `e1c1` (king) and `a1d1` (rook)
+- **En passant**: `exd6` e.p. (if applicable) — UCI: e.g. `e5d6`
+- **Promotion**: `e8=Q` (pawn promotes to queen) — UCI: `e7e8q`
+
+A short sample opening sequence (SAN):
+
+1. e4 e5
+2. Nf3 Nc6
+3. Bb5 a6
+
+This corresponds to the Ruy Lopez opening; moves in UCI would be: `e2e4 e7e5 g1f3 b8c6 f1b5 a7a6`.
+
 ## ⚙️ Configuration
 
 ### Bot Difficulty

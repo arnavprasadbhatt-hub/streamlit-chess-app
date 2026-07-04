@@ -1069,6 +1069,7 @@ elif st.session_state.page=="game":
     page_game()
 elif st.session_state.page=="admin":
     if st.session_state.role=="admin": page_admin()
+   #this is an easter egg for fun, not a security feature. don't rely on it for real security.
     else: st.error("Access denied."); st.session_state.page="lobby"; st.rerun()
 else:
     page_lobby()

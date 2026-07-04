@@ -834,11 +834,8 @@ def render_clickable_board():
 def page_game():
     board  = chess.Board(st.session_state.board_fen)
     pc     = st.session_state.player_color
-<<<<<<< HEAD
-=======
     st.session_state.setdefault("board_flipped", False)
-    flipped= (pc == chess.BLACK) != st.session_state.board_flipped
->>>>>>> da76c7b4a00fd4f5d0383b7c1eb8e716c582c073
+    flipped = (pc == chess.BLACK) != st.session_state.board_flipped
     is_my_turn = (board.turn == pc)
 
     # Sidebar
@@ -894,10 +891,6 @@ def page_game():
     col_board, col_info = st.columns([2.6, 1], gap="large")
 
     with col_board:
-<<<<<<< HEAD
-        render_clickable_board()
-=======
-        # Legal destinations for selected piece
         legal_dests = set()
         if st.session_state.selected_sq is not None:
             for m in board.legal_moves:
@@ -905,17 +898,16 @@ def page_game():
                     legal_dests.add(m.to_square)
 
         html = build_board_component(
-            fen          = st.session_state.board_fen,
-            flipped      = flipped,
-            selected_sq  = st.session_state.selected_sq,
-            legal_dests  = legal_dests,
-            last_move_uci= st.session_state.last_move_uci,
-            is_my_turn   = is_my_turn,
-            game_over    = st.session_state.game_over,
+            fen=st.session_state.board_fen,
+            flipped=flipped,
+            selected_sq=st.session_state.selected_sq,
+            legal_dests=legal_dests,
+            last_move_uci=st.session_state.last_move_uci,
+            is_my_turn=is_my_turn,
+            game_over=st.session_state.game_over,
         )
         board_click = components.html(html, height=600, scrolling=False)
-        
-        # Handle click from board component
+
         if board_click:
             parts = str(board_click).split("|")
             if len(parts) >= 2:
@@ -924,9 +916,8 @@ def page_game():
                     promo_char = parts[1] if parts[1] else None
                     handle_square_click(sq, promo_char)
                     st.rerun()
-                except:
+                except Exception:
                     pass
->>>>>>> da76c7b4a00fd4f5d0383b7c1eb8e716c582c073
 
     with col_info:
         st.markdown('<div class="card">', unsafe_allow_html=True)

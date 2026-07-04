@@ -2,26 +2,15 @@
   "admin": {
     "password": "240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9",
     "role": "admin",
-<<<<<<< HEAD
     "created": "2026-07-03T22:02:47.953685",
-=======
-    "created": "2026-06-30T06:01:10.120297",
->>>>>>> da76c7b4a00fd4f5d0383b7c1eb8e716c582c073
     "wins": 0,
     "losses": 0,
     "draws": 0
   },
-<<<<<<< HEAD
   "arnaviscool": {
     "password": "2a057642222a878bc360f52f8e1f0dfd2af93196f123269397423155a4ec4884",
     "role": "player",
     "created": "2026-07-03T22:02:47.953685",
-=======
-  "jayanti": {
-    "password": "04353f9692977be9ccbe18fd31c835bc3f8a10f76c65e4fda1a7cf65767c70fa",
-    "role": "player",
-    "created": "2026-06-30T06:01:10.123299",
->>>>>>> da76c7b4a00fd4f5d0383b7c1eb8e716c582c073
     "wins": 0,
     "losses": 0,
     "draws": 0

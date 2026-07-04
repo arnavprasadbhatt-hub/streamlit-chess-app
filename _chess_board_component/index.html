@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{background:#0d0d10;display:flex;justify-content:center;align-items:flex-start;padding:8px;}
+  #wrap{position:relative;user-select:none;}
+  canvas{display:block;border-radius:6px;}
+  #overlay{position:absolute;top:0;left:0;cursor:pointer;}
+  #promo-modal{display:none;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+    background:#1e1e28;border:2px solid #e6b84a;border-radius:10px;padding:14px 20px;
+    z-index:10;text-align:center;font-family:'Syne',sans-serif;}
+  #promo-modal p{color:#e6b84a;font-weight:700;font-size:.9rem;margin-bottom:10px;}
+  .promo-btn{font-size:2rem;background:none;border:2px solid #2a2a35;border-radius:6px;
+    cursor:pointer;margin:3px;padding:4px 10px;color:#e6e2db;transition:border-color .2s;}
+  .promo-btn:hover{border-color:#e6b84a;}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="board"></canvas>
+  <canvas id="overlay"></canvas>
+  <div id="promo-modal">
+    <p>Choose promotion piece</p>
+    <button class="promo-btn" data-piece="q">♛</button>
+    <button class="promo-btn" data-piece="r">♜</button>
+    <button class="promo-btn" data-piece="b">♝</button>
+    <button class="promo-btn" data-piece="n">♞</button>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/streamlit-component-lib@1.4.0/streamlit.js"></script>
+<script>
+// ── State (populated on every RENDER_EVENT) ──────────────────────────────────
+let FLIPPED     = false;
+let MY_TURN     = false;
+let SEL_SQ      = -1;
+let LAST_FROM   = -1;
+let LAST_TO     = -1;
+let KING_SQ     = -1;
+let PIECES      = [];
+let LEGAL_DESTS = new Set();
+
+// Responsive sizing
+const MAX_SIZE = Math.min(window.innerWidth - 20, 560);
+const SZ = Math.floor(MAX_SIZE / 8) * 8;   // board px (multiple of 8)
+const SQ = SZ / 8;                          // square px
+const COORD_PAD = Math.round(SQ * 0.22);   // space for rank/file labels
+
+// ── Canvas setup ──────────────────────────────────────────────────────────────
+const wrap = document.getElementById('wrap');
+wrap.style.width  = (SZ + COORD_PAD) + 'px';
+wrap.style.height = (SZ + COORD_PAD) + 'px';
+
+const bc = document.getElementById('board');
+bc.width = bc.height = SZ + COORD_PAD;
+
+const oc = document.getElementById('overlay');
+oc.width = oc.height = SZ + COORD_PAD;
+oc.style.width  = (SZ + COORD_PAD) + 'px';
+oc.style.height = (SZ + COORD_PAD) + 'px';
+
+const ctx  = bc.getContext('2d');
+const octx = oc.getContext('2d');
+
+// ── Piece images (Unicode on canvas) ─────────────────────────────────────────
+const PIECE_UNICODE = {
+  'P':'♙','p':'♟','N':'♘','n':'♞','B':'♗','b':'♝',
+  'R':'♖','r':'♜','Q':'♕','q':'♛','K':'♔','k':'♚'
+};
+
+// ── Coordinate helpers ────────────────────────────────────────────────────────
+function sqToXY(sq) {
+  const file = sq % 8;
+  const rank = Math.floor(sq / 8);
+  const col  = FLIPPED ? 7 - file : file;
+  const row  = FLIPPED ? rank     : 7 - rank;
+  return { x: COORD_PAD + col * SQ, y: row * SQ };
+}
+
+function xyToSq(px, py) {
+  const col = Math.floor((px - COORD_PAD) / SQ);
+  const row = Math.floor(py / SQ);
+  if (col < 0 || col > 7 || row < 0 || row > 7) return -1;
+  const file = FLIPPED ? 7 - col : col;
+  const rank = FLIPPED ? row     : 7 - row;
+  return rank * 8 + file;
+}
+
+// ── Draw board ────────────────────────────────────────────────────────────────
+function drawBoard() {
+  ctx.clearRect(0, 0, bc.width, bc.height);
+
+  // Coordinates background strip
+  ctx.fillStyle = '#17171d';
+  ctx.fillRect(0, 0, bc.width, bc.height);
+
+  for (let row = 0; row < 8; row++) {
+    for (let col = 0; col < 8; col++) {
+      const file = FLIPPED ? 7 - col : col;
+      const rank = FLIPPED ? row     : 7 - row;
+      const sq   = rank * 8 + file;
+      const x    = COORD_PAD + col * SQ;
+      const y    = row * SQ;
+      const light = (file + rank) % 2 === 0;
+
+      // Base square color
+      let color = light ? '#f0d9b5' : '#b58863';
+
+      // Last move highlight
+      if (sq === LAST_FROM || sq === LAST_TO) {
+        color = light ? '#cdd26a' : '#aaa23a';
+      }
+
+      // Selected square
+      if (sq === SEL_SQ) {
+        color = '#4fc3f7';
+      }
+
+      // Check highlight
+      if (sq === KING_SQ) {
+        color = '#e53935';
+      }
+
+      ctx.fillStyle = color;
+      ctx.fillRect(x, y, SQ, SQ);
+
+      // Legal destination dots / rings
+      if (LEGAL_DESTS.has(sq)) {
+        const piece = PIECES.find(p => p.sq === sq);
+        ctx.save();
+        if (piece) {
+          // Capture ring
+          ctx.strokeStyle = 'rgba(76,195,247,0.55)';
+          ctx.lineWidth   = SQ * 0.1;
+          ctx.beginPath();
+          ctx.arc(x + SQ/2, y + SQ/2, SQ * 0.42, 0, Math.PI*2);
+          ctx.stroke();
+        } else {
+          // Move dot
+          ctx.fillStyle = 'rgba(76,195,247,0.45)';
+          ctx.beginPath();
+          ctx.arc(x + SQ/2, y + SQ/2, SQ * 0.16, 0, Math.PI*2);
+          ctx.fill();
+        }
+        ctx.restore();
+      }
+
+      // Rank labels (left edge)
+      if (col === 0) {
+        ctx.fillStyle = light ? '#b58863' : '#f0d9b5';
+        ctx.font      = `bold ${Math.round(SQ*0.22)}px 'JetBrains Mono', monospace`;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+        const rankLabel = rank + 1;
+        ctx.fillText(rankLabel, 3, y + 3);
+      }
+
+      // File labels (bottom edge)
+      if (row === 7) {
+        ctx.fillStyle = light ? '#b58863' : '#f0d9b5';
+        ctx.font      = `bold ${Math.round(SQ*0.22)}px 'JetBrains Mono', monospace`;
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'bottom';
+        const fileLabel = String.fromCharCode(97 + (FLIPPED ? 7 - col : col));
+        ctx.fillText(fileLabel, x + SQ - 3, y + SQ - 2);
+      }
+    }
+  }
+
+  // Draw pieces
+  ctx.textAlign    = 'center';
+  ctx.textBaseline = 'middle';
+  const pieceFontSize = Math.round(SQ * 0.72);
+  ctx.font = `${pieceFontSize}px serif`;
+
+  for (const {sq, sym} of PIECES) {
+    if (sq === SEL_SQ) continue; // draw selected piece last (dragged feel)
+    const {x, y} = sqToXY(sq);
+    const isWhite = sym === sym.toUpperCase();
+
+    // Drop shadow for depth
+    ctx.save();
+    ctx.shadowColor   = 'rgba(0,0,0,0.45)';
+    ctx.shadowBlur    = SQ * 0.12;
+    ctx.shadowOffsetX = SQ * 0.03;
+    ctx.shadowOffsetY = SQ * 0.05;
+    ctx.fillStyle = isWhite ? '#fff8f0' : '#1a1008';
+    ctx.fillText(PIECE_UNICODE[sym], x + SQ/2, y + SQ/2 + SQ*0.03);
+    ctx.restore();
+
+    // Crisp outline for contrast
+    ctx.save();
+    ctx.strokeStyle = isWhite ? '#8b6914' : '#e6d4b0';
+    ctx.lineWidth   = SQ * 0.025;
+    ctx.font        = `${pieceFontSize}px serif`;
+    ctx.strokeText(PIECE_UNICODE[sym], x + SQ/2, y + SQ/2 + SQ*0.03);
+    ctx.restore();
+  }
+
+  // Draw selected piece on top with glow
+  if (SEL_SQ >= 0) {
+    const selPiece = PIECES.find(p => p.sq === SEL_SQ);
+    if (selPiece) {
+      const {x, y} = sqToXY(SEL_SQ);
+      const isWhite = selPiece.sym === selPiece.sym.toUpperCase();
+      ctx.save();
+      ctx.shadowColor = '#4fc3f7';
+      ctx.shadowBlur  = SQ * 0.35;
+      ctx.fillStyle   = isWhite ? '#fff8f0' : '#1a1008';
+      ctx.font        = `${pieceFontSize}px serif`;
+      ctx.fillText(PIECE_UNICODE[selPiece.sym], x + SQ/2, y + SQ/2 + SQ*0.03);
+      ctx.restore();
+    }
+  }
+
+  // Arrow for last move
+  if (LAST_FROM >= 0 && LAST_TO >= 0) {
+    drawArrow(LAST_FROM, LAST_TO, 'rgba(230,184,74,0.55)');
+  }
+}
+
+function drawArrow(fromSq, toSq, color) {
+  const f = sqToXY(fromSq);
+  const t = sqToXY(toSq);
+  const fx = f.x + SQ/2, fy = f.y + SQ/2;
+  const tx = t.x + SQ/2, ty = t.y + SQ/2;
+
+  const angle   = Math.atan2(ty - fy, tx - fx);
+  const headLen = SQ * 0.28;
+  const tailEnd = {x: tx - Math.cos(angle)*SQ*0.38, y: ty - Math.sin(angle)*SQ*0.38};
+
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.fillStyle   = color;
+  ctx.lineWidth   = SQ * 0.10;
+  ctx.lineCap     = 'round';
+
+  ctx.beginPath();
+  ctx.moveTo(fx, fy);
+  ctx.lineTo(tailEnd.x, tailEnd.y);
+  ctx.stroke();
+
+  // Arrowhead
+  ctx.beginPath();
+  ctx.moveTo(tx - Math.cos(angle - 0.4)*headLen, ty - Math.sin(angle - 0.4)*headLen);
+  ctx.lineTo(tx, ty);
+  ctx.lineTo(tx - Math.cos(angle + 0.4)*headLen, ty - Math.sin(angle + 0.4)*headLen);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+// ── Hover effect on overlay canvas ───────────────────────────────────────────
+oc.addEventListener('mousemove', function(e) {
+  if (!MY_TURN) return;
+  const r   = oc.getBoundingClientRect();
+  const sq  = xyToSq(e.clientX - r.left, e.clientY - r.top);
+  octx.clearRect(0, 0, oc.width, oc.height);
+  if (sq >= 0) {
+    const piece = PIECES.find(p => p.sq === sq);
+    if (piece || LEGAL_DESTS.has(sq)) {
+      const {x, y} = sqToXY(sq);
+      octx.fillStyle = 'rgba(255,255,255,0.08)';
+      octx.fillRect(x, y, SQ, SQ);
+    }
+  }
+});
+
+oc.addEventListener('mouseleave', () => octx.clearRect(0, 0, oc.width, oc.height));
+
+// ── Click → report move back to Python via Streamlit.setComponentValue ───────
+let pendingPromoMove = null;  // [fromSq, toSq]
+
+oc.addEventListener('click', function(e) {
+  if (!MY_TURN) return;
+  const r  = oc.getBoundingClientRect();
+  const sq = xyToSq(e.clientX - r.left, e.clientY - r.top);
+  if (sq < 0) return;
+
+  // Check if this is a pawn promotion move
+  if (SEL_SQ >= 0 && LEGAL_DESTS.has(sq)) {
+    const selPiece = PIECES.find(p => p.sq === SEL_SQ);
+    if (selPiece && selPiece.sym.toLowerCase() === 'p') {
+      const destRank = Math.floor(sq / 8);
+      if (destRank === 0 || destRank === 7) {
+        pendingPromoMove = [SEL_SQ, sq];
+        document.getElementById('promo-modal').style.display = 'block';
+        return;
+      }
+    }
+  }
+
+  sendMove(sq, null);
+});
+
+document.querySelectorAll('.promo-btn').forEach(btn => {
+  btn.addEventListener('click', function() {
+    const piece = this.dataset.piece;
+    document.getElementById('promo-modal').style.display = 'none';
+    if (pendingPromoMove) {
+      const toSq = pendingPromoMove[1];
+      pendingPromoMove = null;
+      sendMove(toSq, piece);
+    }
+  });
+});
+
+function sendMove(sq, promoChar) {
+  // Send move back to Python through the real bidirectional component channel
+  const moveData = sq + '|' + (promoChar || '') + '|' + Date.now();
+  try {
+    Streamlit.setComponentValue(moveData);
+  } catch (err) {
+    console.error('Could not deliver move:', err);
+  }
+}
+
+// ── Wire up Streamlit RENDER_EVENT (this is what makes the component
+//    bidirectional — components.html() iframes never receive this) ──────────
+function onRender(event) {
+  const args = event.detail.args;
+  FLIPPED     = !!args.flipped;
+  MY_TURN     = !!args.is_my_turn && !args.game_over;
+  SEL_SQ      = (args.selected_sq === null || args.selected_sq === undefined) ? -1 : args.selected_sq;
+  KING_SQ     = (args.king_sq === null || args.king_sq === undefined) ? -1 : args.king_sq;
+  LAST_FROM   = (args.last_from === null || args.last_from === undefined) ? -1 : args.last_from;
+  LAST_TO     = (args.last_to === null || args.last_to === undefined) ? -1 : args.last_to;
+  PIECES      = args.pieces || [];
+  LEGAL_DESTS = new Set(args.legal_dests || []);
+  drawBoard();
+  Streamlit.setFrameHeight();
+}
+
+Streamlit.events.addEventListener(Streamlit.RENDER_EVENT, onRender);
+Streamlit.setComponentReady();
+Streamlit.setFrameHeight();
+</script>
+</body>
+</html>

@@ -1,2 +1,2 @@
-streamlit==1.35.0
+streamlit>=1.45,<2
 python-chess>=1.2.0,<2

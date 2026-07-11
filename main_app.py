@@ -469,12 +469,17 @@ document.querySelectorAll(".promo-btn").forEach(btn => {
 });
 
 function sendMove(frm, to, promo){
-  const url = new URL(window.top.location.href);
-  url.searchParams.set("frm", frm);
-  url.searchParams.set("to", to);
-  if (promo) url.searchParams.set("promo", promo); else url.searchParams.delete("promo");
-  window.top.history.pushState({}, "", url);
-  window.top.dispatchEvent(new PopStateEvent("popstate"));
+  try {
+    const target = window.parent;
+    const url = new URL(target.location.href);
+    url.searchParams.set("frm", frm);
+    url.searchParams.set("to", to);
+    if (promo) { url.searchParams.set("promo", promo); } else { url.searchParams.delete("promo"); }
+    target.location.href = url.toString();
+  } catch (e) {
+    // Fallback for restricted/cross-origin embeds
+    window.parent.postMessage({source:"chessBoard", frm:frm, to:to, promo:promo || null}, "*");
+  }
 }
 
 function toggleArrowMode(){

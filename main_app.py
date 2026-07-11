@@ -42,9 +42,14 @@ section[data-testid="stSidebar"] *{color:#e6e2db!important;}
 .mlist{font-family:'JetBrains Mono',monospace;font-size:.75rem;color:#888;
   max-height:180px;overflow-y:auto;background:#0d0d10;border-radius:6px;padding:.5rem .8rem;line-height:1.9;}
 .mlist span{color:#e6e2db;}
+.creator-badge{position:fixed;top:.7rem;right:.7rem;z-index:9999;background:#e6b84a;color:#0d0d10;
+  padding:.35rem .72rem;border-radius:999px;font-size:.78rem;font-weight:800;box-shadow:0 8px 18px rgba(0,0,0,.25);}
 #MainMenu,footer,header{visibility:hidden;}
+@media (max-width: 768px){.creator-badge{position:static;margin:0 0 .7rem auto;display:inline-block;}}
 </style>
 """, unsafe_allow_html=True)
+
+st.markdown('<div class="creator-badge">Creator: Arnav Bhatt</div>', unsafe_allow_html=True)
 
 # ── user store ────────────────────────────────────────────────────────────────
 def _hash(pw): return hashlib.sha256(pw.encode()).hexdigest()
@@ -143,6 +148,7 @@ def init():
         gid=None,
         opponent=None,
         clicked_sq=None,
+        mobile_view=False,
     )
     for k, v in defs.items():
         st.session_state.setdefault(k, v)
@@ -592,11 +598,16 @@ def do_logout():
     init()
 
 # ── pages ─────────────────────────────────────────────────────────────────────
+def use_mobile_view():
+    return bool(st.session_state.get("mobile_view", False))
+
+
 def page_auth():
     _,col,_=st.columns([1,1.4,1])
     with col:
         st.markdown('<div class="logo">♟ Chess<span>.</span></div>',unsafe_allow_html=True)
         st.markdown("<p style='color:#555;margin:-4px 0 1.2rem'>Bot · Multiplayer · Admin</p>",unsafe_allow_html=True)
+        st.checkbox("📱 Mobile-friendly view", key="mobile_view")
         t1,t2=st.tabs(["Log in","Create account"])
         with t1:
             u=st.text_input("Username",key="liu"); p=st.text_input("Password",type="password",key="lip")
@@ -619,7 +630,10 @@ def page_lobby():
     c1,c2,c3=st.columns(3)
     c1.metric("Wins",u.get("wins",0)); c2.metric("Losses",u.get("losses",0)); c3.metric("Draws",u.get("draws",0))
     st.markdown("---")
-    L,R=st.columns(2,gap="large")
+    if use_mobile_view():
+        L=st.container(); R=st.container()
+    else:
+        L,R=st.columns(2,gap="large")
     with L:
         st.markdown('<div class="card"><div class="ct">🤖 vs Bot (~1000 ELO)</div>',unsafe_allow_html=True)
         cp=st.selectbox("Play as",["White","Black"],key="lbc")
@@ -656,7 +670,7 @@ def page_lobby():
     if og:
         st.markdown("### Open games")
         for gid,g in og[:8]:
-            ca,cb=st.columns([3,1])
+            ca,cb=st.columns([1,1] if use_mobile_view() else [3,1])
             ca.markdown(f"**{g['white']}** · {g['created'][:10]}")
             if cb.button("Join",key="oj_"+gid):
                 g["black"]=st.session_state.username; g["status"]="active"; games[gid]=g; save_games(games)
@@ -691,7 +705,10 @@ def page_game():
                 rows.append(f"{i//2+1}. <span>{w}</span> <span>{b}</span>")
             st.markdown('<div class="mlist">'+"<br>".join(rows)+"</div>",unsafe_allow_html=True)
 
-    col_board,col_info=st.columns([1.9,1],gap="large")
+    if use_mobile_view():
+        col_board=st.container(); col_info=st.container()
+    else:
+        col_board,col_info=st.columns([1.9,1],gap="large")
 
     with col_board:
         whose="Your turn ✅" if is_my_turn else "Opponent's turn ⏳"
@@ -790,6 +807,7 @@ if st.session_state.logged_in:
     with st.sidebar:
         st.markdown("### ♟ Chess")
         st.markdown(f"**{st.session_state.username}**")
+        st.checkbox("📱 Mobile-friendly view", key="mobile_view")
         if st.session_state.role=="admin":
             st.markdown('<span class="badge badge-admin">admin</span>',unsafe_allow_html=True)
         st.markdown("---")

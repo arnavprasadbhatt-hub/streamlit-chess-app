@@ -9,5 +9,14 @@
     "status": "waiting",
     "result": null,
     "created": "2026-07-11T11:21:25.859402"
+  },
+  "bf3f2df6": {
+    "white": "admin",
+    "black": null,
+    "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+    "moves": [],
+    "status": "waiting",
+    "result": null,
+    "created": "2026-07-11T14:28:43.206949"
   }
 }

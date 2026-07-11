@@ -1,5 +1,5 @@
 """
-Chess Platform - ~1000 ELO Bot + Multiplayer + Admin
+Chess Platform - Stronger Bot + Multiplayer + Admin
 Run: streamlit run app.py
 """
 import streamlit as st
@@ -103,31 +103,54 @@ def evaluate(b):
             s+=v if p.color==chess.WHITE else -v
     return s
 
+def order_moves(b):
+    def score(m):
+        if b.is_capture(m):
+            victim=b.piece_at(m.to_square)
+            attacker=b.piece_at(m.from_square)
+            vv=PV.get(victim.piece_type,0) if victim else 0
+            av=PV.get(attacker.piece_type,0) if attacker else 0
+            return 1000+vv-av//10
+        if m.promotion: return 900
+        return 0
+    return sorted(b.legal_moves,key=score,reverse=True)
+
 def minimax(b,d,a,be,mx):
     if d==0 or b.is_game_over(): return evaluate(b)
     if mx:
         best=-999999
-        for m in b.legal_moves:
+        for m in order_moves(b):
             b.push(m); best=max(best,minimax(b,d-1,a,be,False)); b.pop()
             a=max(a,best)
             if be<=a: break
         return best
     else:
         best=999999
-        for m in b.legal_moves:
+        for m in order_moves(b):
             b.push(m); best=min(best,minimax(b,d-1,a,be,True)); b.pop()
             be=min(be,best)
             if be<=a: break
         return best
 
+BOT_DEPTH=3  # plies searched beyond the root move; raise for a stronger (slower) bot
+
 def get_bot_move(b):
     legal=list(b.legal_moves)
     if not legal: return None
-    if random.random()<0.25: return random.choice(legal)
-    best,bv=None,-999999
-    for m in legal:
-        b.push(m); v=minimax(b,1,-999999,999999,b.turn==chess.WHITE); b.pop()
-        if v>bv: bv,best=v,m
+    bot_is_white=b.turn==chess.WHITE
+    best=None
+    bv=-999999 if bot_is_white else 999999
+    a,be=-999999,999999
+    for m in order_moves(b):
+        b.push(m)
+        v=minimax(b,BOT_DEPTH,a,be,not bot_is_white)
+        b.pop()
+        if bot_is_white:
+            if v>bv: bv,best=v,m
+            a=max(a,bv)
+        else:
+            if v<bv: bv,best=v,m
+            be=min(be,bv)
     return best or random.choice(legal)
 
 # ── session ───────────────────────────────────────────────────────────────────
@@ -679,34 +702,42 @@ def page_lobby():
                     status="Opponent's turn",game_over=False,page="game",clicked_sq=None)
                 st.rerun()
 
+def render_game_controls(is_my_turn):
+    st.markdown(f"**{st.session_state.username}** vs **{st.session_state.opponent}**")
+    st.markdown("---")
+    if st.button("Back to Lobby",key="sl"): st.session_state.page="lobby"; st.rerun()
+    if st.button("Resign",key="sr"):        st.session_state.page="lobby"; st.rerun()
+    st.markdown("---")
+    mi=st.text_input("Move (UCI or SAN)",placeholder="e2e4 or Nf3",key="mi")
+    if st.button("Submit move",key="sm"):
+        if is_my_turn:
+            err=uci_move(mi)
+            if err: st.session_state.status=err
+        st.rerun()
+    st.markdown("---")
+    hist=st.session_state.history
+    if hist:
+        rows=[]
+        for i in range(0,len(hist),2):
+            w=hist[i]; b=hist[i+1] if i+1<len(hist) else "..."
+            rows.append(f"{i//2+1}. <span>{w}</span> <span>{b}</span>")
+        st.markdown('<div class="mlist">'+"<br>".join(rows)+"</div>",unsafe_allow_html=True)
+
 def page_game():
     board=chess.Board(st.session_state.fen)
     pc=st.session_state.my_color
     is_my_turn=(board.turn==pc and not st.session_state.game_over)
 
-    with st.sidebar:
-        st.markdown(f"**{st.session_state.username}** vs **{st.session_state.opponent}**")
-        st.markdown("---")
-        if st.button("Back to Lobby",key="sl"): st.session_state.page="lobby"; st.rerun()
-        if st.button("Resign",key="sr"):        st.session_state.page="lobby"; st.rerun()
-        st.markdown("---")
-        mi=st.text_input("Move (UCI or SAN)",placeholder="e2e4 or Nf3",key="mi")
-        if st.button("Submit move",key="sm"):
-            if is_my_turn:
-                err=uci_move(mi)
-                if err: st.session_state.status=err
-            st.rerun()
-        st.markdown("---")
-        hist=st.session_state.history
-        if hist:
-            rows=[]
-            for i in range(0,len(hist),2):
-                w=hist[i]; b=hist[i+1] if i+1<len(hist) else "..."
-                rows.append(f"{i//2+1}. <span>{w}</span> <span>{b}</span>")
-            st.markdown('<div class="mlist">'+"<br>".join(rows)+"</div>",unsafe_allow_html=True)
+    if use_mobile_view():
+        with st.expander("⚙️ Game controls & move list",expanded=False):
+            render_game_controls(is_my_turn)
+    else:
+        with st.sidebar:
+            render_game_controls(is_my_turn)
 
     if use_mobile_view():
-        col_board=st.container(); col_info=st.container()
+        main=st.container()
+        col_board=col_info=main
     else:
         col_board,col_info=st.columns([1.9,1],gap="large")
 
@@ -803,19 +834,26 @@ elif _frm or _to or _promo:
     st.query_params.clear()
 
 # ── nav + router ──────────────────────────────────────────────────────────────
+def render_nav():
+    st.markdown("### ♟ Chess")
+    st.markdown(f"**{st.session_state.username}**")
+    st.checkbox("📱 Mobile-friendly view", key="mobile_view")
+    if st.session_state.role=="admin":
+        st.markdown('<span class="badge badge-admin">admin</span>',unsafe_allow_html=True)
+    st.markdown("---")
+    if st.button("🏠 Lobby",key="nl"):  st.session_state.page="lobby"; st.rerun()
+    if st.session_state.role=="admin":
+        if st.button("🛡 Admin",key="na"): st.session_state.page="admin"; st.rerun()
+    st.markdown("---")
+    if st.button("🚪 Log out",key="nlo"): do_logout(); st.rerun()
+
 if st.session_state.logged_in:
-    with st.sidebar:
-        st.markdown("### ♟ Chess")
-        st.markdown(f"**{st.session_state.username}**")
-        st.checkbox("📱 Mobile-friendly view", key="mobile_view")
-        if st.session_state.role=="admin":
-            st.markdown('<span class="badge badge-admin">admin</span>',unsafe_allow_html=True)
-        st.markdown("---")
-        if st.button("🏠 Lobby",key="nl"):  st.session_state.page="lobby"; st.rerun()
-        if st.session_state.role=="admin":
-            if st.button("🛡 Admin",key="na"): st.session_state.page="admin"; st.rerun()
-        st.markdown("---")
-        if st.button("🚪 Log out",key="nlo"): do_logout(); st.rerun()
+    if use_mobile_view():
+        with st.expander("☰ Menu",expanded=False):
+            render_nav()
+    else:
+        with st.sidebar:
+            render_nav()
 
 pg=st.session_state.page
 if   not st.session_state.logged_in: page_auth()

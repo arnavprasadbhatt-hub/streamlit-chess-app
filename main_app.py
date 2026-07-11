@@ -258,322 +258,54 @@ PSYM = {
     (chess.KING,  chess.WHITE):"♔",(chess.KING,  chess.BLACK):"♚",
 }
 
-BOARD_HTML = r"""<!DOCTYPE html>
-<html>
-<head>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<style>
-  * { box-sizing: border-box; }
-  html,body { margin:0; padding:0; background:transparent; font-family:'Syne',Arial,sans-serif; }
-  .wrap { display:flex; flex-direction:column; align-items:center; gap:8px; padding:4px 0; }
-  .toolbar { display:flex; gap:8px; flex-wrap:wrap; justify-content:center; }
-  .toolbar button {
-    background:#e6b84a; color:#0d0d10; border:none; border-radius:6px;
-    font-weight:800; padding:.4rem .9rem; cursor:pointer; font-size:13px;
-    font-family:'Syne',Arial,sans-serif;
-  }
-  .toolbar button.active { background:#5fc8ee; color:#0d0d10; }
-  .board-shell { position:relative; width:min(560px,94vw); height:min(560px,94vw); }
-  .board {
-    width:100%; height:100%; display:grid;
-    grid-template-columns:repeat(8,1fr); grid-template-rows:repeat(8,1fr);
-    border:3px solid #3a3a45; border-radius:4px; overflow:hidden;
-    box-shadow:0 8px 32px rgba(0,0,0,.55);
-  }
-  .square { position:relative; display:flex; align-items:center; justify-content:center;
-            font-size:min(7vw,42px); user-select:none; }
-  .light { background:#f0d9b5; }
-  .dark  { background:#b58863; }
-  .last-move { box-shadow: inset 0 0 0 1000px rgba(255,235,59,.32); }
-  .check-sq  { background:#e53935 !important; }
-  .selected  { outline:3px solid #5fc8ee; outline-offset:-3px; z-index:2; }
-  .legal-dot::after {
-    content:""; position:absolute; width:26%; height:26%; border-radius:50%;
-    background:rgba(30,160,70,.55); z-index:1;
-  }
-  .legal-capture::after {
-    content:""; position:absolute; width:82%; height:82%; border-radius:50%;
-    border:5px solid rgba(200,60,60,.55); box-sizing:border-box; z-index:1;
-  }
-  .piece { cursor:grab; z-index:3; line-height:1; }
-  .piece.disabled { cursor:default; }
-  .coord { position:absolute; font-size:10px; font-weight:700; font-family:'JetBrains Mono',monospace;
-           color:rgba(0,0,0,.4); z-index:4; }
-  .coord-rank { top:2px; left:3px; }
-  .coord-file { bottom:2px; right:3px; }
-  .board-overlay { position:absolute; inset:0; pointer-events:none; z-index:5; }
-  .promo-overlay {
-    position:absolute; inset:0; display:none; align-items:center; justify-content:center;
-    background:rgba(0,0,0,.55); z-index:20; border-radius:4px;
-  }
-  .promo-dialog { background:#17171d; border:1px solid #2a2a35; border-radius:10px;
-                  padding:14px 16px; text-align:center; }
-  .promo-dialog h4 { margin:0 0 8px; color:#e6e2db; font-size:14px; font-family:'Syne',Arial,sans-serif; }
-  .promo-row { display:flex; gap:6px; }
-  .promo-btn { border:none; border-radius:6px; padding:8px 10px; font-size:22px;
-               cursor:pointer; background:#2a2a35; color:#e6e2db; }
-  .promo-btn:hover { background:#e6b84a; color:#0d0d10; }
-  @media (max-width:480px) {
-    .toolbar button { font-size:12px; padding:.35rem .7rem; }
-  }
-</style>
-</head>
-<body>
-<div class="wrap">
-  <div class="toolbar">
-    <button id="arrowBtn" onclick="toggleArrowMode()">✏ Draw Arrows</button>
-    <button onclick="clearArrows()">🧹 Clear Arrows</button>
-  </div>
-  <div class="board-shell">
-    <div id="board" class="board"></div>
-    <svg id="arrowLayer" class="board-overlay" viewBox="0 0 640 640" preserveAspectRatio="none"></svg>
-    <div id="promoOverlay" class="promo-overlay">
-      <div class="promo-dialog">
-        <h4>Promote to</h4>
-        <div class="promo-row">
-          <button class="promo-btn" data-p="q">♕</button>
-          <button class="promo-btn" data-p="r">♖</button>
-          <button class="promo-btn" data-p="b">♗</button>
-          <button class="promo-btn" data-p="n">♘</button>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
-<script>
-const DATA = __DATA__;
-const FILES = ["a","b","c","d","e","f","g","h"];
-const boardEl = document.getElementById("board");
-
-let arrowMode = false;
-let arrowStart = null;
-let arrows = [];
-let selected = null;
-let pendingPromo = null;
-
-function squareColor(fileIdx, rank){ return ((fileIdx + rank) % 2 === 0) ? "light" : "dark"; }
-
-function buildBoard(){
-  boardEl.innerHTML = "";
-  const ranks = DATA.flip ? [1,2,3,4,5,6,7,8] : [8,7,6,5,4,3,2,1];
-  const dfiles = DATA.flip ? FILES.slice().reverse() : FILES;
-
-  ranks.forEach(rank => {
-    dfiles.forEach(file => {
-      const name = file + rank;
-      const fIdx = FILES.indexOf(file);
-      const sq = document.createElement("div");
-      sq.className = "square " + squareColor(fIdx, rank);
-      sq.dataset.sq = name;
-
-      if (DATA.last && DATA.last.includes(name)) sq.classList.add("last-move");
-      if (DATA.check === name) sq.classList.add("check-sq");
-      if (selected === name) sq.classList.add("selected");
-
-      const targets = (selected && DATA.legal && DATA.legal[selected]) || [];
-      if (targets.includes(name)) {
-        sq.classList.add(DATA.squares[name] ? "legal-capture" : "legal-dot");
-      }
-
-      if (fIdx === (DATA.flip ? 7 : 0)) {
-        const r = document.createElement("div");
-        r.className = "coord coord-rank"; r.innerText = rank;
-        sq.appendChild(r);
-      }
-      if (rank === (DATA.flip ? 8 : 1)) {
-        const f = document.createElement("div");
-        f.className = "coord coord-file"; f.innerText = file;
-        sq.appendChild(f);
-      }
-
-      const sym = DATA.squares[name];
-      if (sym) {
-        const span = document.createElement("span");
-        span.className = "piece";
-        span.innerText = sym;
-        const mine = DATA.interactive && DATA.myPieces.includes(name);
-        span.draggable = !!mine;
-        if (!mine) span.classList.add("disabled");
-        span.addEventListener("dragstart", (e) => {
-          if (arrowMode || !mine) { e.preventDefault(); return; }
-          selected = name;
-          e.dataTransfer.setData("text/plain", name);
-          buildBoard();
-        });
-        sq.appendChild(span);
-      }
-
-      sq.addEventListener("dragover", (e) => e.preventDefault());
-      sq.addEventListener("drop", (e) => {
-        e.preventDefault();
-        const frm = e.dataTransfer.getData("text/plain");
-        if (frm) attemptMove(frm, name);
-      });
-      sq.addEventListener("click", () => onSquareClick(name));
-
-      boardEl.appendChild(sq);
-    });
-  });
-  drawArrows();
-}
-
-function onSquareClick(name){
-  if (arrowMode) {
-    if (!arrowStart) { arrowStart = name; }
-    else if (arrowStart === name) { arrowStart = null; }
-    else { arrows.push({from: arrowStart, to: name}); arrowStart = null; }
-    buildBoard();
-    return;
-  }
-  if (!DATA.interactive) return;
-
-  if (selected) {
-    if (selected === name) { selected = null; buildBoard(); return; }
-    const legalTo = (DATA.legal && DATA.legal[selected]) || [];
-    if (legalTo.includes(name)) { attemptMove(selected, name); return; }
-    if (DATA.myPieces.includes(name)) { selected = name; buildBoard(); return; }
-    selected = null; buildBoard();
-    return;
-  }
-  if (DATA.myPieces.includes(name)) { selected = name; buildBoard(); }
-}
-
-function isPromotion(frm, to){
-  const sym = DATA.squares[frm];
-  if (!sym) return false;
-  const isPawn = (sym === "♙" || sym === "♟");
-  if (!isPawn) return false;
-  const rank = parseInt(to[1], 10);
-  return (rank === 1 || rank === 8);
-}
-
-function attemptMove(frm, to){
-  if (!DATA.interactive) return;
-  const legalTo = (DATA.legal && DATA.legal[frm]) || [];
-  if (!legalTo.includes(to)) { selected = null; buildBoard(); return; }
-  if (isPromotion(frm, to)) {
-    pendingPromo = {frm, to};
-    document.getElementById("promoOverlay").style.display = "flex";
-    return;
-  }
-  sendMove(frm, to, null);
-}
-
-document.querySelectorAll(".promo-btn").forEach(btn => {
-  btn.addEventListener("click", () => {
-    if (!pendingPromo) return;
-    sendMove(pendingPromo.frm, pendingPromo.to, btn.dataset.p);
-    pendingPromo = null;
-    document.getElementById("promoOverlay").style.display = "none";
-  });
-});
-
-function sendMove(frm, to, promo){
-  try {
-    const target = window.parent;
-    const url = new URL(target.location.href);
-    url.searchParams.set("frm", frm);
-    url.searchParams.set("to", to);
-    if (promo) { url.searchParams.set("promo", promo); } else { url.searchParams.delete("promo"); }
-    target.location.href = url.toString();
-  } catch (e) {
-    // Fallback for restricted/cross-origin embeds
-    window.parent.postMessage({source:"chessBoard", frm:frm, to:to, promo:promo || null}, "*");
-  }
-}
-
-function toggleArrowMode(){
-  arrowMode = !arrowMode;
-  arrowStart = null;
-  document.getElementById("arrowBtn").classList.toggle("active", arrowMode);
-  buildBoard();
-}
-function clearArrows(){ arrows = []; arrowStart = null; buildBoard(); }
-
-function squareCenter(name){
-  const file = FILES.indexOf(name[0]);
-  const rank = parseInt(name[1], 10);
-  const df = DATA.flip ? 7 - file : file;
-  const dr = DATA.flip ? rank - 1 : 8 - rank;
-  return { x: df*80 + 40, y: dr*80 + 40 };
-}
-
-function drawArrows(){
-  const svg = document.getElementById("arrowLayer");
-  svg.innerHTML = "";
-  if (arrows.length === 0 && !arrowStart) return;
-  const ns = "http://www.w3.org/2000/svg";
-  const marker = document.createElementNS(ns, "marker");
-  marker.setAttribute("id", "arrowhead");
-  marker.setAttribute("markerWidth", "8"); marker.setAttribute("markerHeight", "8");
-  marker.setAttribute("refX", "6"); marker.setAttribute("refY", "3"); marker.setAttribute("orient", "auto");
-  const poly = document.createElementNS(ns, "polygon");
-  poly.setAttribute("points", "0 0, 7 3, 0 6"); poly.setAttribute("fill", "#2563eb");
-  marker.appendChild(poly); svg.appendChild(marker);
-  arrows.forEach(a => {
-    const f = squareCenter(a.from), t = squareCenter(a.to);
-    const line = document.createElementNS(ns, "line");
-    line.setAttribute("x1", f.x); line.setAttribute("y1", f.y);
-    line.setAttribute("x2", t.x); line.setAttribute("y2", t.y);
-    line.setAttribute("stroke", "#2563eb"); line.setAttribute("stroke-width", "6");
-    line.setAttribute("stroke-linecap", "round"); line.setAttribute("marker-end", "url(#arrowhead)");
-    line.setAttribute("opacity", "0.95");
-    svg.appendChild(line);
-  });
-}
-
-buildBoard();
-</script>
-</body>
-</html>"""
-
-
+# ── board renderer (native Streamlit buttons - no iframe, works everywhere) ───
 def render_board():
     board = chess.Board(st.session_state.fen)
-    flip  = st.session_state.my_color == chess.BLACK
-    pc    = st.session_state.my_color
+    pc = st.session_state.my_color
     is_my_turn = board.turn == pc and not st.session_state.game_over
-
-    squares, my_pieces = {}, []
-    for sq in chess.SQUARES:
-        p = board.piece_at(sq)
-        if p:
-            name = chess.square_name(sq)
-            squares[name] = PSYM[(p.piece_type, p.color)]
-            if is_my_turn and p.color == pc:
-                my_pieces.append(name)
+    flip = pc == chess.BLACK
 
     legal_map = {}
     if is_my_turn:
         for m in board.legal_moves:
-            legal_map.setdefault(chess.square_name(m.from_square), []).append(chess.square_name(m.to_square))
+            legal_map.setdefault(m.from_square, []).append(m.to_square)
+    sel = st.session_state.sel
+    legal_targets = set(legal_map.get(sel, [])) if sel is not None else set()
 
-    last_sqs = []
+    last_sqs = set()
     if st.session_state.last_uci:
         try:
             lm = chess.Move.from_uci(st.session_state.last_uci)
-            last_sqs = [chess.square_name(lm.from_square), chess.square_name(lm.to_square)]
+            last_sqs = {lm.from_square, lm.to_square}
         except ValueError:
             pass
 
-    check_name = None
-    if board.is_check():
-        ksq = board.king(board.turn)
-        if ksq is not None:
-            check_name = chess.square_name(ksq)
+    ranks = range(8, 0, -1) if not flip else range(1, 9)
+    files = range(8) if not flip else range(7, -1, -1)
 
-    payload = {
-        "squares": squares,
-        "legal": legal_map,
-        "last": last_sqs,
-        "check": check_name,
-        "flip": flip,
-        "interactive": is_my_turn,
-        "myPieces": my_pieces,
-    }
-
-    html = BOARD_HTML.replace("__DATA__", json.dumps(payload))
-    components.html(html, height=700, scrolling=False)
+    st.markdown('<div class="board-wrap">', unsafe_allow_html=True)
+    for rank in ranks:
+        cols = st.columns(8, gap="small")
+        for i, f in enumerate(files):
+            sq = chess.square(f, rank - 1)
+            name = chess.square_name(sq)
+            p = board.piece_at(sq)
+            if p:
+                label = PSYM[(p.piece_type, p.color)]
+            elif sq in legal_targets:
+                label = "•"
+            else:
+                label = "\u200b"
+            is_selected = sel == sq
+            is_highlight = is_selected or sq in legal_targets or sq in last_sqs
+            with cols[i]:
+                if st.button(label, key=f"sq_{name}", use_container_width=True,
+                             type="primary" if is_highlight else "secondary",
+                             disabled=not is_my_turn):
+                    sq_click(sq)
+                    st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
+    st.caption("Tap a piece, then tap a highlighted square to move it. Pawns auto-promote to Queen.")
 
 # ── multiplayer ───────────────────────────────────────────────────────────────
 def mp_push(gid,uci):
